@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Update your User model to match the database structure
+model User {
+  id            String    @id @default(cuid())
+  fullName      String    // Make sure this matches your database
+  email         String    @unique
+  password      String
+  emailVerified Boolean   @default(false)
+  verifyToken   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  documents     KycDocument[]
+  formData      KycFormData[]  // Add this relation field
+  verificationStatus KycVerificationStatus? // Add this relation field
+  balance      Float         @default(0)
+  transactions Transaction[]
+}
+
+// KYC Document Types
+// Add this new model for document blobs
+model KycDocumentBlob {
+  id          String    @id @default(cuid())
+  documentId  String
+  blobData    Bytes
+  mimeType    String
+  fileSize    Int
+  createdAt   DateTime  @default(now())
+  document    KycDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+// Update KycDocument model to include blob relation
+model KycDocument {
+  id           String    @id @default(cuid())
+  userId       String
+  documentType String
+  // Remove fileUrl field
+  fileSize     Int
+  fileType     String
+  status       String    @default("pending")
+  verifiedAt   DateTime?
+  verifiedBy   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id])
+  blobs        KycDocumentBlob[]
+  
+  @@index([userId])
+  @@unique([userId, documentType])
+}
+
+// Add the verification status model
+model KycVerificationStatus {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  identificationStatus   String   @default("not_submitted")
+  addressStatus          String   @default("not_submitted")
+  taxStatus              String   @default("not_submitted")
+  financialStatus        String   @default("not_submitted")
+  isComplete             Boolean  @default(false)
+  lastUpdated            DateTime @default(now()) @updatedAt
+  user                   User     @relation(fields: [userId], references: [id])
+}
+
+// KYC Form Data
+model KycFormData {
+  id          String   @id @default(cuid())
+  userId      String
+  formType    String
+  formData    Json
+  status      String
+  verifiedAt  DateTime?
+  verifiedBy  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])  // Add this relation
+
+  @@unique([userId, formType])
+}
+
+// Add this to your existing schema.prisma file if it doesn't already exist
+
+model Transaction {
+  id              String   @id @default(cuid())
+  userId          String
+  transactionHash String   @unique
+  amount          Float
+  currency        String
+  method          String
+  type            String   // 'deposit', 'withdrawal', etc.
+  status          String   // 'pending', 'completed', 'failed'
+  timestamp       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+

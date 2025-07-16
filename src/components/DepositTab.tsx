@@ -26,7 +26,34 @@ const DepositOptions = () => {
   const [transactionStatus, setTransactionStatus] = useState('Waiting for deposit');
   const [copied, setCopied] = useState(false); // For copy feedback
   
-  // Function to generate wallet from userId and passcode
+  // Add central wallet transfer tracking
+  const [transferToCentralStatus, setTransferToCentralStatus] = useState('Pending');
+  const [centralTransferHash, setCentralTransferHash] = useState('');
+  
+  // Helper function to generate deterministic private key from user ID
+  const generateDeterministicPrivateKey = (userId: string): string => {
+    // Validate userId
+    if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
+      throw new Error('Invalid user ID');
+    }
+    
+    // Create deterministic seed
+    const passcode = process.env.NEXT_PUBLIC_WALLET_PASSCODE || 'default-secure-passcode-2024';
+    const salt = 'TokenizeHub-Wallet-Generation';
+    const combinedString = `${salt}-${userId}-${passcode}`;
+    
+    // Generate hash
+    const hash = sha256(combinedString);
+    
+    // Validate hash
+    if (hash.length !== 64) {
+      throw new Error('Hash generation failed');
+    }
+    
+    return '0x' + hash;
+  };
+
+  // Function to generate wallet from userId using deterministic private key
   const generateWallet = () => {
     if (!session?.user?.id) {
       alert('You must be logged in to generate a wallet address');
@@ -35,27 +62,34 @@ const DepositOptions = () => {
     
     setIsGenerating(true);
     
+    // Reset all transaction states
+    setTransactionHash('');
+    setDepositedAmount('');
+    setTransactionStatus('Waiting for deposit');
+    setTransferToCentralStatus('Pending');
+    setCentralTransferHash('');
+    
     try {
-      // Create a deterministic private key from userId and a passcode
-      const passcode = process.env.NEXT_PUBLIC_WALLET_PASSCODE || 'default-secure-passcode';
       const userId = session.user.id;
       
-      // Create a hash from the userId and passcode
-      const combinedString = `${userId}-${passcode}`;
-      const hash = sha256(combinedString);
+      console.log('Generating deterministic wallet for user ID:', userId.substring(0, 8) + '...');
       
-      // Use the hash as a private key (adding 0x prefix for ethers)
-      const privateKey = '0x' + hash;
+      // Generate deterministic private key
+      const privateKey = generateDeterministicPrivateKey(userId);
       
       // Generate wallet from private key
       const wallet = new ethers.Wallet(privateKey);
       
+      console.log('Generated wallet address:', wallet.address);
+      console.log('This address will always be the same for this user');
+      
       // Set the wallet address
       setCryptoWallet(wallet.address);
       setShowQRCode(true);
+      
     } catch (error) {
       console.error('Error generating wallet:', error);
-      alert('Failed to generate wallet address');
+      alert('Failed to generate wallet address. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -134,7 +168,7 @@ const DepositOptions = () => {
         
         // Listen for logs matching our filter
         // Add this constant at the top with other imports
-        const CENTRAL_WALLET = '0x7123a1Da94493C1fbB241a64A1784E83C8c92535';
+        const CENTRAL_WALLET = '0x14Bb4214E10b9e2EA352E29dD973B3Df370f9B4C';
         
         // Make the callback function async
         alchemyInstance.ws.on(filter, async (log) => {
@@ -180,19 +214,35 @@ const DepositOptions = () => {
                 // Transfer to central wallet
                 try {
                   console.log('Starting transfer to central wallet...');
+                  setTransferToCentralStatus('Transferring');
                   
-                  // Create wallet instance from private key
-                  const passcode = process.env.NEXT_PUBLIC_WALLET_PASSCODE || 'default-secure-passcode';
+                  // Create wallet instance using the deterministic helper function
                   const userId = session?.user?.id;
-                  const combinedString = `${userId}-${passcode}`;
-                  const hash = sha256(combinedString);
-                  const privateKey = '0x' + hash;
-                  const wallet = new ethers.Wallet(privateKey);
-                  console.log('Wallet instance created for transfer');
+                  
+                  if (!userId) {
+                    throw new Error('User ID not available for wallet recreation');
+                  }
+                  
+                  // Use the helper function to generate the same deterministic private key
+                  const privateKey = generateDeterministicPrivateKey(userId);
+                  
+                  // Create provider for Polygon mainnet
+                  const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+                  const wallet = new ethers.Wallet(privateKey, provider);
+                  console.log('Wallet instance recreated for transfer using helper function');
+                  
+                  // Verify the wallet address matches what we generated earlier
+                  if (wallet.address.toLowerCase() !== cryptoWallet.toLowerCase()) {
+                    console.error('Wallet address mismatch!');
+                    console.error('Expected:', cryptoWallet);
+                    console.error('Generated:', wallet.address);
+                    throw new Error('Wallet address mismatch during transfer');
+                  }
                   
                   // USDT contract interface
                   const usdtInterface = new ethers.Interface([
-                    "function transfer(address to, uint256 value) returns (bool)"
+                    "function transfer(address to, uint256 value) returns (bool)",
+                    "function balanceOf(address account) view returns (uint256)"
                   ]);
                   console.log('USDT interface created');
                   
@@ -204,25 +254,36 @@ const DepositOptions = () => {
                   );
                   console.log('USDT contract instance created');
                   
-                  console.log('Initiating transfer to central wallet:', CENTRAL_WALLET);
-                  console.log('Amount to transfer:', ethers.formatUnits(value, 6), 'USDT');
+                  // Check wallet balance first
+                  const balance = await usdtContract.balanceOf(cryptoWallet);
+                  console.log('Current wallet balance:', ethers.formatUnits(balance, 6), 'USDT');
                   
-                  // Transfer to central wallet
-                  const tx = await usdtContract.transfer(
-                    CENTRAL_WALLET,
-                    value
-                  );
-                  
-                  console.log('Transfer transaction created:', tx.hash);
-                  console.log('Waiting for transaction confirmation...');
-                  
-                  // Wait for confirmation
-                  const receipt = await tx.wait();
-                  console.log('Transfer confirmed in block:', receipt.blockNumber);
-                  console.log('Gas used:', receipt.gasUsed.toString());
-                  console.log('Transfer to central wallet completed successfully');
+                  if (balance > 0) {
+                    console.log('Initiating transfer to central wallet:', CENTRAL_WALLET);
+                    console.log('Amount to transfer:', ethers.formatUnits(balance, 6), 'USDT');
+                    
+                    // Transfer entire balance to central wallet
+                    const tx = await usdtContract.transfer(CENTRAL_WALLET, balance);
+                    
+                    console.log('Transfer transaction created:', tx.hash);
+                    setCentralTransferHash(tx.hash);
+                    console.log('Waiting for transaction confirmation...');
+                    
+                    // Wait for confirmation
+                    const receipt = await tx.wait();
+                    console.log('Transfer confirmed in block:', receipt.blockNumber);
+                    console.log('Gas used:', receipt.gasUsed.toString());
+                    console.log('Transfer to central wallet completed successfully');
+                    
+                    setTransferToCentralStatus('Completed');
+                  } else {
+                    console.log('No balance to transfer');
+                    setTransferToCentralStatus('No balance');
+                  }
                 } catch (error: unknown) {
                   console.error('Error transferring to central wallet:', error);
+                  setTransferToCentralStatus('Failed');
+                  
                   // Type guard for error object with reason property
                   if (error && typeof error === 'object' && 'reason' in error) {
                     console.error('Error reason:', (error as { reason: string }).reason);
@@ -239,44 +300,6 @@ const DepositOptions = () => {
           }
         });
         
-        // Also monitor new blocks to check for pending transactions
-        alchemyInstance.ws.on('block', async (blockNumber: number) => {
-          console.log('New block detected:', blockNumber);
-          
-          try {
-            // Get pending transactions for our address
-            const pendingTxs = await alchemyInstance.core.getAssetTransfers({
-              fromBlock: '0x' + blockNumber.toString(16), // Convert to hex string
-              toBlock: '0x' + blockNumber.toString(16),   // Convert to hex string
-              toAddress: cryptoWallet,
-              contractAddresses: [usdtContractAddress],
-              category: ["erc20" as any]  // Type assertion to bypass type checking
-            });
-            
-            console.log('Pending transactions in block:', pendingTxs);
-            
-            if (pendingTxs.transfers && pendingTxs.transfers.length > 0) {
-              for (const transfer of pendingTxs.transfers) {
-                console.log('Found USDT transfer:', transfer);
-                
-                if (transfer.to?.toLowerCase() === cryptoWallet.toLowerCase()) {
-                  console.log('Transfer is to our wallet!');
-                  
-                  if (transfer.asset === 'USDT') {
-                    console.log('Transfer is USDT!');
-                    
-                    setTransactionHash(transfer.hash || '');
-                    setDepositedAmount(transfer.value?.toString() || '0');
-                    setTransactionStatus('Deposited');
-                    console.log('Transaction status updated to Deposited');
-                  }
-                }
-              }
-            }
-          } catch (blockError) {
-            console.error('Error checking for transfers in block:', blockError);
-          }
-        });
       } catch (error) {
         console.error('Error setting up event monitoring:', error);
       }
@@ -449,7 +472,7 @@ const DepositOptions = () => {
                 <h3 className="text-sm font-medium text-gray-700">Transaction Status</h3>
                 {transactionHash && (
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm text-gray-600">Transaction Hash:</span>
+                    <span className="text-sm text-gray-600">Deposit Transaction:</span>
                     <a 
                       href={`https://polygonscan.com/tx/${transactionHash}`} 
                       target="_blank"
@@ -465,7 +488,7 @@ const DepositOptions = () => {
                   <span className="font-medium">{depositedAmount || '0.00'} USDT</span>
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <span className="text-sm text-gray-600">Status:</span>
+                  <span className="text-sm text-gray-600">Deposit Status:</span>
                   <span className={`px-2 py-1 text-xs rounded-full flex items-center ${
                     transactionStatus === 'Deposited' 
                       ? 'bg-green-100 text-green-800' 
@@ -480,13 +503,74 @@ const DepositOptions = () => {
                     {transactionStatus}
                   </span>
                 </div>
+                
+                {/* Central wallet transfer status */}
+                {transactionStatus === 'Deposited' && (
+                  <>
+                    <hr className="my-2 border-gray-200" />
+                    <h4 className="text-sm font-medium text-gray-700 mb-1">Transfer to Central Wallet</h4>
+                    {centralTransferHash && (
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-sm text-gray-600">Transfer Transaction:</span>
+                        <a 
+                          href={`https://polygonscan.com/tx/${centralTransferHash}`} 
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#695936] hover:underline text-xs"
+                        >
+                          {centralTransferHash.slice(0, 6)}...{centralTransferHash.slice(-4)}
+                        </a>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-sm text-gray-600">Central Wallet:</span>
+                      <span className="text-xs font-mono">0x14Bb...9B4C</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-sm text-gray-600">Transfer Status:</span>
+                      <span className={`px-2 py-1 text-xs rounded-full flex items-center ${
+                        transferToCentralStatus === 'Completed' 
+                          ? 'bg-green-100 text-green-800' 
+                          : transferToCentralStatus === 'Failed'
+                          ? 'bg-red-100 text-red-800'
+                          : transferToCentralStatus === 'Transferring'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {transferToCentralStatus === 'Transferring' && (
+                          <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        {transferToCentralStatus}
+                      </span>
+                    </div>
+                  </>
+                )}
+                
                 <p className="text-xs text-gray-500 mt-2">
-                  Deposits typically take 5-20 minutes to be detected after blockchain confirmation.
+                  {transactionStatus === 'Deposited' && transferToCentralStatus === 'Completed' 
+                    ? 'Deposit received and successfully transferred to central wallet.'
+                    : transactionStatus === 'Deposited' && transferToCentralStatus === 'Transferring'
+                    ? 'Deposit received. Transferring to central wallet...'
+                    : transactionStatus === 'Deposited' && transferToCentralStatus === 'Failed'
+                    ? 'Deposit received but transfer to central wallet failed.'
+                    : 'Deposits typically take 5-20 minutes to be detected after blockchain confirmation.'
+                  }
                 </p>
               </div>
               
               <button
-                onClick={() => setShowQRCode(false)}
+                onClick={() => {
+                  setShowQRCode(false);
+                  // Reset all transaction states when generating new address
+                  setTransactionHash('');
+                  setDepositedAmount('');
+                  setTransactionStatus('Waiting for deposit');
+                  setTransferToCentralStatus('Pending');
+                  setCentralTransferHash('');
+                }}
                 className="mt-4 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
               >
                 Generate New Address

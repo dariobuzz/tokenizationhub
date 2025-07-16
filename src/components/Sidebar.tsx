@@ -1,185 +1,274 @@
 'use client';
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 
-// Add this helper function to check for admin role
-const isAdmin = (session: any): boolean => {
-  return session?.user?.role === 'admin';
-};
+interface NavItem {
+  label: string;
+  href: string;
+  icon: string;
+  badge?: string;
+  badgeColor?: 'red' | 'blue' | 'green' | 'yellow';
+  requiresAuth?: boolean;
+}
 
 const Sidebar = () => {
-  const { data: session } = useSession();
   const pathname = usePathname();
-  const [isHovered, setIsHovered] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const menuItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { path: '/tokens', label: 'Token Portfolio', icon: '💰' },
-    { path: '/deposit', label: 'Deposit Funds', icon: '💸' },
-    { path: '/rewards', label: 'Rewards & Claims', icon: '🏆' },
-    { path: '/kyc', label: 'KYC Verification', icon: '🔐' },
+  const navItems: NavItem[] = [
+    {
+      label: 'Dashboard',
+      href: '/dashboard',
+      icon: '🏠',
+      requiresAuth: true
+    },
+    {
+      label: 'Portfolio',
+      href: '/dashboard?tab=portfolio',
+      icon: '📊',
+      requiresAuth: true
+    },
+    {
+      label: 'Properties',
+      href: '/tokens',
+      icon: '🏢',
+      badge: 'New',
+      badgeColor: 'green'
+    },
+    {
+      label: 'Deposit',
+      href: '/deposit',
+      icon: '💳',
+      badge: 'Popular',
+      badgeColor: 'blue',
+      requiresAuth: true
+    },
+    {
+      label: 'KYC Verification',
+      href: '/kyc',
+      icon: '✅',
+      badge: session ? undefined : 'Required',
+      badgeColor: 'red',
+      requiresAuth: true
+    },
+    {
+      label: 'Rewards',
+      href: '/rewards',
+      icon: '🎁',
+      requiresAuth: true
+    },
+    {
+      label: 'Activity',
+      href: '/dashboard?tab=activity',
+      icon: '⚡',
+      requiresAuth: true
+    },
+    {
+      label: 'Support',
+      href: '/support',
+      icon: '💬'
+    }
   ];
 
-  // Admin menu items
-  const adminMenuItems = [
-    { path: '/admin/dashboard', label: 'Admin Dashboard', icon: '⚙️' },
-    { path: '/admin/kyc', label: 'KYC Management', icon: '🔍' },
-    { path: '/admin/deposits', label: 'User Deposits', icon: '💲' },
-  ];
+  const isActiveLink = (href: string) => {
+    if (href === '/dashboard' && pathname === '/dashboard') {
+      return true;
+    }
+    if (href.includes('?tab=') && pathname === '/dashboard') {
+      return false; // Handle tab navigation differently
+    }
+    return pathname === href;
+  };
+
+  const getBadgeStyles = (color: string) => {
+    const styles = {
+      red: 'bg-red-100 text-red-800',
+      blue: 'bg-blue-100 text-blue-800',
+      green: 'bg-green-100 text-green-800',
+      yellow: 'bg-yellow-100 text-yellow-800'
+    };
+    return styles[color as keyof typeof styles] || styles.blue;
+  };
+
+  // Filter items based on auth status
+  const filteredNavItems = navItems.filter(item => 
+    !item.requiresAuth || session
+  );
 
   return (
-    <motion.div 
-      className="w-64 bg-white shadow-md h-screen"
-      initial={{ x: -50, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      <div className="p-4">
-        <motion.h2 
-          className="text-xl font-semibold text-gray-800 mb-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          Menu
-        </motion.h2>
-        <nav>
-          <ul className="space-y-2">
-            {menuItems.map((item, index) => (
-              <motion.li 
-                key={item.path}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 * index }}
-              >
-                <Link 
-                  href={item.path} 
-                  className={`flex items-center px-4 py-2 rounded transition-all duration-200 ${
-                    pathname === item.path 
-                      ? 'bg-[#695936] text-white' 
-                      : 'text-[#695936] hover:bg-blue-50'
-                  }`}
-                  onMouseEnter={() => setIsHovered(item.path)}
-                  onMouseLeave={() => setIsHovered(null)}
-                >
-                  <span className="mr-3">{item.icon}</span>
-                  <motion.span
-                    animate={{ 
-                      x: isHovered === item.path ? 5 : 0,
-                    }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                  >
-                    {item.label}
-                  </motion.span>
-                  {pathname === item.path && (
-                    <motion.div 
-                      className="w-1 h-full bg-white absolute right-0"
-                      layoutId="activeIndicator"
-                    />
-                  )}
-                </Link>
-              </motion.li>
-            ))}
-            
-            {/* Admin menu items - only shown if user has admin role */}
-            {isAdmin(session) && (
-              <>
-                <motion.li 
-                  className="pt-4 border-t mt-4"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.5 }}
-                >
-                  <div className="px-4 py-2 text-sm font-medium text-gray-500">
-                    Admin Controls
-                  </div>
-                </motion.li>
-                
-                {adminMenuItems.map((item, index) => (
-                  <motion.li 
-                    key={item.path}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 + (0.1 * index) }}
-                  >
-                    <Link 
-                      href={item.path} 
-                      className={`flex items-center px-4 py-2 rounded transition-all duration-200 ${
-                        pathname === item.path 
-                          ? 'bg-[#695936] text-white' 
-                          : 'text-[#695936] hover:bg-blue-50'
-                      }`}
-                      onMouseEnter={() => setIsHovered(item.path)}
-                      onMouseLeave={() => setIsHovered(null)}
-                    >
-                      <span className="mr-3">{item.icon}</span>
-                      <motion.span
-                        animate={{ 
-                          x: isHovered === item.path ? 5 : 0,
-                        }}
-                        transition={{ type: "spring", stiffness: 300 }}
-                      >
-                        {item.label}
-                      </motion.span>
-                      {pathname === item.path && (
-                        <motion.div 
-                          className="w-1 h-full bg-white absolute right-0"
-                          layoutId="adminActiveIndicator"
-                        />
-                      )}
-                    </Link>
-                  </motion.li>
-                ))}
-              </>
-            )}
-           
-            {/* Conditional rendering based on authentication status */}
-            <motion.li 
-              className="pt-4 border-t mt-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
+    <>
+      {/* Mobile overlay */}
+      {!isCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black/20 lg:hidden z-40"
+          onClick={() => setIsCollapsed(true)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <motion.aside
+        className={`fixed lg:relative z-50 h-screen bg-white border-r border-gray-200 transition-all duration-300 ${
+          isCollapsed ? 'w-16' : 'w-64'
+        } ${!isCollapsed ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+        initial={false}
+        animate={{ width: isCollapsed ? 64 : 256 }}
+      >
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-gray-200">
+          <motion.button
+            className="flex items-center justify-center w-full p-2 hover:bg-gray-50 rounded-lg transition-colors"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <svg 
+              className={`h-5 w-5 text-gray-500 transition-transform ${
+                isCollapsed ? 'rotate-180' : ''
+              }`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
             >
-              {session ? (
-                <motion.button 
-                  onClick={() => signOut({ callbackUrl: '/' })}
-                  className="flex items-center w-full text-left px-4 py-2 text-white bg-[#695936] hover:bg-[#7a6a42] rounded"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <span className="mr-3">👋</span>
-                  Logout
-                </motion.button>
-              ) : (
-                <Link href="/login" className="flex items-center px-4 py-2 text-[#695936] hover:bg-blue-50 rounded">
-                  <span className="mr-3">🔑</span>
-                  Login
-                </Link>
-              )}
-            </motion.li>
-            {/* Add Registration as a separate list item */}
-            {!session && (
-              <motion.li
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.7 }}
-              >
-                <Link 
-                  href="/registration" 
-                  className="flex items-center px-4 py-2 text-white bg-[#695936] hover:bg-[#7a6a42] rounded mt-2"
-                >
-                  <span className="mr-3">✏️</span>
-                  Registration
-                </Link>
-              </motion.li>
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M11 19l-7-7 7-7m8 14l-7-7 7-7" 
+              />
+            </svg>
+            {!isCollapsed && (
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                Collapse
+              </span>
             )}
-          </ul>
+          </motion.button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="p-4 space-y-2 overflow-y-auto">
+          {filteredNavItems.map((item, index) => {
+            const isActive = isActiveLink(item.href);
+            
+            return (
+              <motion.div
+                key={item.href}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <Link href={item.href}>
+                  <motion.div
+                    className={`group flex items-center px-3 py-3 rounded-lg transition-all duration-200 ${
+                      isActive
+                        ? 'bg-[#695936] text-white shadow-sm'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-[#695936]'
+                    }`}
+                    whileHover={{ x: isActive ? 0 : 4 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {/* Icon */}
+                    <div className="flex-shrink-0 text-xl">
+                      {item.icon}
+                    </div>
+
+                    {/* Label and Badge */}
+                    {!isCollapsed && (
+                      <motion.div 
+                        className="flex items-center justify-between flex-1 ml-3"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.1 }}
+                      >
+                        <span className="text-sm font-medium truncate">
+                          {item.label}
+                        </span>
+                        
+                        {item.badge && (
+                          <motion.span
+                            className={`px-2 py-1 text-xs font-semibold rounded-full ${getBadgeStyles(item.badgeColor || 'blue')}`}
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ delay: 0.2, type: "spring" }}
+                          >
+                            {item.badge}
+                          </motion.span>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {/* Collapsed state badge */}
+                    {isCollapsed && item.badge && (
+                      <motion.div
+                        className="absolute left-10 top-2 w-2 h-2 bg-red-500 rounded-full"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring" }}
+                      />
+                    )}
+                  </motion.div>
+                </Link>
+
+                {/* Tooltip for collapsed state */}
+                {isCollapsed && (
+                  <div className="absolute left-16 top-0 bg-gray-900 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                    {item.label}
+                    {item.badge && (
+                      <span className={`ml-2 px-1 py-0.5 rounded text-xs ${getBadgeStyles(item.badgeColor || 'blue')}`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
         </nav>
-      </div>
-    </motion.div>
+
+        {/* Quick Stats - Only show when expanded and user is logged in */}
+        {!isCollapsed && session && (
+          <motion.div 
+            className="p-4 border-t border-gray-200 mt-auto"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <div className="bg-gradient-to-r from-[#695936] to-[#7a6a42] rounded-lg p-4 text-white">
+              <h4 className="text-sm font-semibold mb-2">Quick Stats</h4>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-white/80">Portfolio:</span>
+                  <span className="font-semibold">$24.7K</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/80">ROI:</span>
+                  <span className="font-semibold text-green-200">+15.2%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/80">Properties:</span>
+                  <span className="font-semibold">3</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Mobile toggle button */}
+        <motion.button
+          className="lg:hidden fixed bottom-4 right-4 bg-[#695936] text-white p-3 rounded-full shadow-lg z-50"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </motion.button>
+      </motion.aside>
+    </>
   );
 };
 

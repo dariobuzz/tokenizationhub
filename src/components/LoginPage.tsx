@@ -64,7 +64,7 @@ const LoginPage = () => {
             transition={{ duration: 0.5 }}
           >
             <Image 
-              src="/logo.png" 
+              src="/SUN_LOGO.png" 
               alt="TokenizeHub Logo" 
               width={80} 
               height={80}

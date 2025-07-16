@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, ChangeEvent, FormEvent } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { motion } from 'framer-motion';
 
 const RegistrationPage = () => {
   const [formData, setFormData] = useState({
@@ -67,21 +69,58 @@ const RegistrationPage = () => {
 
   return (
     <div className="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold text-[#695936] mb-6 text-center">Create Account</h2>
+      <div className="flex justify-center mb-6">
+        <motion.div
+          initial={{ scale: 0.8 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Image 
+            src="/SUN_LOGO.png" 
+            alt="TokenizeHub Logo" 
+            width={80} 
+            height={80}
+            className="object-contain"
+          />
+        </motion.div>
+      </div>
+      
+      <motion.h2 
+        className="text-2xl font-bold text-[#695936] mb-6 text-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        Create Account
+      </motion.h2>
       
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <motion.div 
+          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
           {error}
-        </div>
+        </motion.div>
       )}
       
       {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+        <motion.div 
+          className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
           {success}
-        </div>
+        </motion.div>
       )}
       
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <motion.form 
+        className="space-y-4" 
+        onSubmit={handleSubmit}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+      >
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
           <input
@@ -139,7 +178,7 @@ const RegistrationPage = () => {
         >
           {loading ? 'Registering...' : 'Register'}
         </button>
-      </form>
+      </motion.form>
       <div className="mt-4 text-center">
         <span className="text-gray-600">Already have an account? </span>
         <Link href="/login" className="text-[#695936] hover:underline">
